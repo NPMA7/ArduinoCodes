@@ -1,0 +1,446 @@
+#include <WiFi.h>
+
+#include <WebServer.h>
+
+WebServer server(80);
+
+
+const char* ssid = "";
+
+const char* password = "";
+
+
+
+const int ledPin1 = 16;
+
+const int ledPin2 = 17;
+
+const int ledPin3 = 18;
+
+
+bool dapurLedState = false;
+
+bool tamuLedState = false;
+
+bool makanLedState = false;
+
+
+const char htmlPage[] PROGMEM = R"rawliteral(
+
+<!DOCTYPE html>
+
+<html lang="en">
+
+  <head>
+
+    <meta charset="UTF-8" />
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>ESP32 Control</title>
+
+    <style>
+
+      body {
+
+        font-family: Arial, sans-serif;
+
+        background-color: #f4f4f4;
+
+        margin: 0;
+
+        padding: 0;
+
+        display: flex;
+
+        flex-direction: column;
+
+        align-items: center;
+
+        justify-content: center;
+
+        height: 100vh;
+
+      }
+
+      h1 {
+
+        color: #333;
+
+      }
+
+      .container {
+
+        display: flex;
+
+        gap: 2em;
+
+        background-color: white;
+
+        padding: 20px;
+
+        border-radius: 10px;
+
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+
+      }
+
+      button {
+
+        padding: 10px 20px;
+
+        margin: 10px;
+
+        border: none;
+
+        border-radius: 5px;
+
+        background-color: #007bff;
+
+        color: white;
+
+        cursor: pointer;
+
+      }
+
+      button:disabled {
+
+        background-color: #cccccc;
+
+      }
+
+    </style>
+
+  </head>
+
+  <body>
+
+    <h1>ESP32 Lamp Control</h1>
+
+    <div class="container">
+
+      <div>
+
+        <h3>Dapur</h3>
+
+        <button id="dapur-btn" onclick="toggleDapur()">
+
+          Toggle Dapur Lamp
+
+        </button>
+
+        <p id="dapur-status">Status: Loading...</p>
+
+      </div>
+
+
+
+      <div>
+
+        <h3>Ruang Tamu</h3>
+
+        <button id="tamu-btn" onclick="toggleTamu()">
+
+          Toggle Ruang Tamu Lamp
+
+        </button>
+
+        <p id="tamu-status">Status: Loading...</p>
+
+      </div>
+
+
+
+      <div>
+
+        <h3>Ruang Makan</h3>
+
+        <button id="makan-btn" onclick="toggleMakan()">
+
+          Toggle Ruang Makan Lamp
+
+        </button>
+
+        <p id="makan-status">Status: Loading...</p>
+
+      </div>
+    </div>
+
+
+
+    <script>
+
+      const dapurBtn = document.getElementById("dapur-btn");
+
+      const tamuBtn = document.getElementById("tamu-btn");
+
+      const makanBtn = document.getElementById("makan-btn");
+
+      const dapurStatus = document.getElementById("dapur-status");
+
+      const tamuStatus = document.getElementById("tamu-status");
+
+      const makanStatus = document.getElementById("makan-status");
+
+
+      const baseUrl = "";
+
+
+
+      function toggleDapur() {
+
+        fetch(`${baseUrl}/dapur`, { method: "POST" })
+
+          .then((response) => response.text())
+
+          .then((data) => (dapurStatus.textContent = `Status: ${data}`))
+
+          .catch((error) => console.error("Error:", error));
+
+      }
+
+
+
+      function toggleTamu() {
+
+        fetch(`${baseUrl}/tamu`, { method: "POST" })
+
+          .then((response) => response.text())
+
+          .then((data) => (tamuStatus.textContent = `Status: ${data}`))
+
+          .catch((error) => console.error("Error:", error));
+
+      }
+
+
+
+      function toggleMakan() {
+
+        fetch(`${baseUrl}/makan`, { method: "POST" })
+
+          .then((response) => response.text())
+
+          .then((data) => (makanStatus.textContent = `Status: ${data}`))
+
+          .catch((error) => console.error("Error:", error));
+
+      }
+
+      
+      function getStatus() {
+
+        fetch(`${baseUrl}/dapur`, { method: "GET" })
+
+          .then((response) => response.text())
+
+          .then((data) => (dapurStatus.textContent = `Status: ${data}`))
+
+          .catch((error) => console.error("Error:", error));
+
+
+
+        fetch(`${baseUrl}/tamu`, { method: "GET" })
+
+          .then((response) => response.text())
+
+          .then((data) => (tamuStatus.textContent = `Status: ${data}`))
+
+          .catch((error) => console.error("Error:", error));
+
+
+
+        fetch(`${baseUrl}/makan`, { method: "GET" })
+
+          .then((response) => response.text())
+
+          .then((data) => (makanStatus.textContent = `Status: ${data}`))
+
+          .catch((error) => console.error("Error:", error));
+      }
+
+
+
+      // Fetch initial status
+
+      getStatus();
+
+    </script>
+
+  </body>
+
+</html>
+
+)rawliteral";
+
+
+
+void getRoot();
+
+void getDapurLed();
+
+void setDapurLed();
+
+void setTamuLed();
+
+void getTamuLed();
+
+void setMakanLed();
+
+void getMakanLed();
+
+
+
+
+void setup()
+
+{
+
+  Serial.begin(115200); 
+
+
+
+  pinMode(ledPin1, OUTPUT);
+
+  pinMode(ledPin2, OUTPUT);
+
+  pinMode(ledPin3, OUTPUT);
+
+  
+
+  WiFi.begin(ssid, password);  
+
+  while (WiFi.status() != WL_CONNECTED) { 
+
+    delay(500);
+
+    Serial.print(".");
+
+  }
+
+ Serial.println("");
+
+ Serial.print("Successfully connected to: ");
+
+ Serial.print(ssid);
+
+ Serial.print(" with IP address: ");
+
+ Serial.println(WiFi.localIP());
+
+ Serial.println("Exiting setup() ...");
+
+
+
+  server.on("/", HTTP_GET, getRoot);
+
+  server.on("/dapur", HTTP_GET, getDapurLed);
+
+  server.on("/tamu", HTTP_GET, getTamuLed);
+
+  server.on("/makan", HTTP_GET, getMakanLed);
+
+
+  server.on("/dapur", HTTP_POST, setDapurLed);
+
+  server.on("/tamu", HTTP_POST, setTamuLed);
+
+  server.on("/makan", HTTP_POST, setMakanLed);
+
+
+
+  server.begin();
+
+  Serial.println("Server Connected");
+
+} 
+
+
+
+void loop(){
+
+  server.handleClient();
+
+}
+
+
+
+// Define the functions here
+
+void getRoot() {
+
+  server.send(200, "text/html", htmlPage);
+
+}
+
+
+
+void getDapurLed() {
+
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+
+  server.send(200, "text/plain", dapurLedState ? "ON" : "OFF"); 
+
+}
+
+
+
+void getTamuLed() {
+
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+
+  server.send(200, "text/plain", tamuLedState ? "ON" : "OFF"); 
+
+}
+
+
+
+void getMakanLed() {
+
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+
+  server.send(200, "text/plain", makanLedState ? "ON" : "OFF"); 
+
+}
+
+
+
+void setDapurLed() {
+
+  dapurLedState = !dapurLedState;
+
+  digitalWrite(ledPin1, dapurLedState ? HIGH : LOW);
+
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+
+  server.send(200, "text/plain", dapurLedState ? "ON" : "OFF"); 
+
+}
+
+
+
+void setTamuLed() {
+
+  tamuLedState = !tamuLedState;
+
+  digitalWrite(ledPin2, tamuLedState ? HIGH : LOW);
+
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+
+  server.send(200, "text/plain", tamuLedState ? "ON" : "OFF"); 
+
+}
+
+
+
+void setMakanLed() {
+
+  makanLedState = !makanLedState;
+
+  digitalWrite(ledPin3, makanLedState ? HIGH : LOW);
+
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+
+  server.send(200, "text/plain", makanLedState ? "ON" : "OFF"); 
+
+}

@@ -1,59 +1,100 @@
 #include <WiFi.h>
 #include <WebServer.h>
 
-// Ganti dengan SSID dan password WiFi kamu
 const char* ssid = "NAMA_WIFI_KAMU";
 const char* password = "PASSWORD_WIFI_KAMU";
 
-// Membuat server web di port 80
 WebServer server(80);
-
-// Pin GPIO untuk LED (bisa pakai GPIO 25 atau GPIO 2 jika pakai LED bawaan ESP32)
 const int ledPin = 25;
 
 void setup() {
   Serial.begin(115200);
-  
-  // Setup pin LED sebagai OUTPUT
   pinMode(ledPin, OUTPUT);
-  digitalWrite(ledPin, LOW); // LED mati di awal
+  digitalWrite(ledPin, LOW);
 
-  // Mulai koneksi WiFi
   WiFi.begin(ssid, password);
   Serial.print("Menghubungkan ke WiFi");
-
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
 
   Serial.println("\nTerhubung!");
-  Serial.print("Alamat IP: ");
   Serial.println(WiFi.localIP());
 
-  // Halaman utama web
+  // Halaman utama
   server.on("/", HTTP_GET, []() {
-    String html = "<html><body style='text-align:center; font-family:sans-serif;'>";
-    html += "<h1>Kontrol LED</h1>";
-    html += "<p>Klik tombol di bawah untuk menyalakan LED</p>";
-    html += "<a href=\"/power\"><button style='font-size:24px;padding:20px;'>Nyalakan LED</button></a>";
-    html += "</body></html>";
+    String html = R"rawliteral(
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Kontrol LED</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+      </head>
+      <body style='text-align:center; font-family:sans-serif; padding-top:50px;'>
+        <h1>Kontrol LED dengan Tombol & Suara</h1>
+        <button onclick="nyalakanLED()" style="font-size:24px; padding:15px; margin:10px;">Nyalakan LED</button>
+        <button onclick="matikanLED()" style="font-size:24px; padding:15px; margin:10px;">Matikan LED</button>
+        <br><br>
+        <button onclick="mulaiVoice()" style="font-size:24px; padding:15px;">Perintah Suara</button>
+        <p id="status"></p>
+
+        <script>
+          function nyalakanLED() {
+            fetch("/nyala");
+          }
+
+          function matikanLED() {
+            fetch("/mati");
+          }
+
+          function mulaiVoice() {
+            const status = document.getElementById("status");
+            if (!('webkitSpeechRecognition' in window)) {
+              status.innerText = "Browser tidak mendukung voice recognition";
+              return;
+            }
+
+            let recognition = new webkitSpeechRecognition();
+            recognition.lang = "id-ID";
+            recognition.start();
+            status.innerText = "Mendengarkan...";
+
+            recognition.onresult = function(event) {
+              let hasil = event.results[0][0].transcript.toLowerCase();
+              status.innerText = "Perintah: " + hasil;
+              if (hasil.includes("nyalakan") || hasil.includes("hidupkan")) {
+                nyalakanLED();
+              } else if (hasil.includes("matikan") || hasil.includes("padamkan")) {
+                matikanLED();
+              }
+            }
+
+            recognition.onerror = function(event) {
+              status.innerText = "Error: " + event.error;
+            }
+          }
+        </script>
+      </body>
+      </html>
+    )rawliteral";
     server.send(200, "text/html", html);
   });
 
-  // Endpoint untuk menyalakan LED
-  server.on("/power", HTTP_GET, []() {
-    digitalWrite(ledPin, HIGH); // LED nyala
-    delay(1000);                // 1 detik
-    digitalWrite(ledPin, LOW);  // LED mati
-    server.send(200, "text/plain", "LED sudah dinyalakan selama 1 detik.");
+  server.on("/nyala", HTTP_GET, []() {
+    digitalWrite(ledPin, HIGH);
+    server.send(200, "text/plain", "LED dinyalakan");
   });
 
-  // Jalankan server
+  server.on("/mati", HTTP_GET, []() {
+    digitalWrite(ledPin, LOW);
+    server.send(200, "text/plain", "LED dimatikan");
+  });
+
   server.begin();
-  Serial.println("Server web ESP32 siap!");
+  Serial.println("Web server aktif!");
 }
 
 void loop() {
-  server.handleClient(); // Menangani request dari browser
+  server.handleClient();
 }

@@ -1,0 +1,222 @@
+#include <WiFi.h>
+#include <WebServer.h>
+
+const char* ssid = "NAMA_WIFI_KAMU";
+const char* password = "PASSWORD_WIFI_KAMU";
+
+WebServer server(80);
+const int RelayPin = 25;
+const int GreenLedPin = 26; // Pin untuk lampu indikator hijau
+String ipLaptop = "192.168.1.100"; // IP laptop yang akan diping
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(RelayPin, OUTPUT);
+  digitalWrite(RelayPin, LOW);
+  
+  pinMode(GreenLedPin, OUTPUT); // Inisialisasi pin LED hijau
+  digitalWrite(GreenLedPin, LOW); // Matikan lampu indikator hijau terlebih dahulu
+
+  WiFi.begin(ssid, password);
+  Serial.print("Menghubungkan ke WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("\nTerhubung ke WiFi!");
+  Serial.println(WiFi.localIP());
+
+  server.on("/", HTTP_GET, []() {
+    String html = R"rawliteral(
+      <!DOCTYPE html>
+      <html lang="id">
+      <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Monitor Controller ESP32</title>
+        <style>
+          body {
+            font-family: 'Segoe UI', sans-serif;
+            background: linear-gradient(to right, #2193b0, #6dd5ed);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            color: #fff;
+          }
+          .btn {
+            padding: 12px 24px;
+            margin: 10px;
+            font-size: 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+          }
+          .trigger { background: #4caf50; }
+          .shutdown { background: #f44336; }
+          .voice { background: #ff9800; }
+          .ping { background: #008CBA; }
+          .btn:hover { opacity: 0.9; }
+          input[type="number"] {
+            padding: 8px;
+            font-size: 16px;
+            border-radius: 6px;
+            border: none;
+            width: 80px;
+            margin-left: 10px;
+          }
+        </style>
+      </head>
+      <body>
+        <h2>Monitor Controller</h2>
+        <button class="btn trigger" onclick="triggerRelay()">Trigger 1 Detik</button>
+        <br>
+        <label>Durasi Shutdown (1-10 detik): </label>
+        <input type="number" id="shutdownTime" value="3" min="1" max="10" />
+        <button class="btn shutdown" onclick="shutdownManual()">Matikan Paksa</button>
+        <br><br>
+        <button class="btn voice" onclick="mulaiVoice()">Perintah Suara</button>
+        <br><br>
+        <label>IP Laptop: </label><input type="text" id="ipLaptop" value="192.168.1.100" />
+        <button class="btn ping" onclick="pingLaptop()">Ping Laptop</button>
+        <br><br>
+        <p id="status">Status: Siap</p>
+        <p id="pingStatus">Ping Status: Belum Diuji</p>
+        <br><br>
+        <p id="wifiStatus">Status WiFi: Belum Tersambung</p>
+        <p id="espIp">IP ESP32: -</p>
+        <script>
+          function triggerRelay() {
+            fetch("/trigger").then(res => res.text()).then(data => {
+              document.getElementById("status").innerText = "Status: " + data;
+            });
+          }
+
+          function shutdownManual() {
+            let detik = parseInt(document.getElementById("shutdownTime").value);
+            if (isNaN(detik) || detik < 1 || detik > 10) {
+              alert("Masukkan durasi antara 1 hingga 10 detik.");
+              return;
+            }
+            fetch("/shutdown?detik=" + detik)
+              .then(res => res.text())
+              .then(data => {
+                document.getElementById("status").innerText = "Status: " + data;
+              });
+          }
+
+          function mulaiVoice() {
+            const status = document.getElementById("status");
+            if (!('webkitSpeechRecognition' in window)) {
+              status.innerText = "Browser tidak mendukung pengenalan suara";
+              return;
+            }
+
+            let recognition = new webkitSpeechRecognition();
+            recognition.lang = "id-ID";
+            recognition.start();
+            status.innerText = "Mendengarkan perintah...";
+
+            recognition.onresult = function(event) {
+              let hasil = event.results[0][0].transcript.toLowerCase();
+              status.innerText = "Perintah diterima: " + hasil;
+
+              if (hasil.includes("shutdown") || hasil.includes("paksa") || hasil.includes("mati total")) {
+                shutdownManual();
+              } else if (hasil.includes("nyalakan") || hasil.includes("hidupkan") || hasil.includes("trigger")) {
+                triggerRelay();
+              }
+            }
+
+            recognition.onerror = function(event) {
+              status.innerText = "Error suara: " + event.error;
+            }
+          }
+
+          function pingLaptop() {
+            let ip = document.getElementById("ipLaptop").value;
+            fetch("/ping?ip=" + ip)
+              .then(res => res.text())
+              .then(data => {
+                document.getElementById("pingStatus").innerText = "Ping Status: " + data;
+              });
+          }
+
+          function updateWiFiStatus() {
+            fetch("/wifiStatus")
+              .then(res => res.json())
+              .then(data => {
+                document.getElementById("wifiStatus").innerText = "Status WiFi: " + data.status;
+                document.getElementById("espIp").innerText = "IP ESP32: " + data.ip;
+              });
+          }
+
+          setInterval(updateWiFiStatus, 10000); // Update status WiFi setiap 10 detik
+          setInterval(pingLaptop, 30000); // Ping Laptop setiap 30 detik
+        </script>
+      </body>
+      </html>
+    )rawliteral";
+    server.send(200, "text/html", html);
+  });
+
+  server.on("/trigger", HTTP_GET, []() {
+    digitalWrite(RelayPin, HIGH);
+    delay(1000);
+    digitalWrite(RelayPin, LOW);
+    server.send(200, "text/plain", "Relay aktif selama 1 detik");
+  });
+
+  server.on("/shutdown", HTTP_GET, []() {
+    if (server.hasArg("detik")) {
+      int durasi = server.arg("detik").toInt();
+      if (durasi < 1) durasi = 1;
+      else if (durasi > 10) durasi = 10;
+      digitalWrite(RelayPin, HIGH);
+      delay(durasi * 1000);
+      digitalWrite(RelayPin, LOW);
+      server.send(200, "text/plain", "Shutdown selama " + String(durasi) + " detik");
+    } else {
+      server.send(400, "text/plain", "Parameter detik tidak ditemukan");
+    }
+  });
+
+  server.on("/ping", HTTP_GET, []() {
+    if (server.hasArg("ip")) {
+      String ip = server.arg("ip");
+      int pingResult = ping(ip.c_str()); // Panggil fungsi ping
+      if (pingResult == 0) {
+        digitalWrite(GreenLedPin, HIGH); // Lampu hijau menyala jika laptop terhubung
+        server.send(200, "text/plain", "Laptop menyala");
+      } else {
+        digitalWrite(GreenLedPin, LOW); // Lampu hijau mati jika laptop tidak terhubung
+        server.send(200, "text/plain", "Laptop mati");
+      }
+    } else {
+      server.send(400, "text/plain", "Parameter IP tidak ditemukan");
+    }
+  });
+
+  server.on("/wifiStatus", HTTP_GET, []() {
+    String wifiStatus = WiFi.status() == WL_CONNECTED ? "Tersambung" : "Tidak Tersambung";
+    String ip = WiFi.localIP().toString();
+    String response = "{\"status\": \"" + wifiStatus + "\", \"ip\": \"" + ip + "\"}";
+    server.send(200, "application/json", response);
+  });
+
+  server.begin();
+  Serial.println("Web server aktif!");
+}
+
+void loop() {
+  server.handleClient();
+}
+
+int ping(const char* ip) {
+  // Implementasikan logika ping untuk menguji koneksi ke IP laptop
+  // Misalnya menggunakan library ping, atau send request ke alamat IP
+  // Kembalikan 0 jika berhasil (laptop menyala), atau 1 jika gagal (laptop mati)
+  return 0; // Gantilah sesuai dengan logika ping yang digunakan
+}

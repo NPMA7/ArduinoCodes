@@ -1,8 +1,8 @@
 #include <WiFi.h>
 #include <WebServer.h>
 
-const char* ssid = "NAMA_WIFI_KAMU";
-const char* password = "PASSWORD_WIFI_KAMU";
+const char* ssid = "Phariscell";
+const char* password = "09122006";
 
 WebServer server(80);
 const int RelayPin = 25;

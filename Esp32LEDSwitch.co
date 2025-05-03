@@ -1,0 +1,59 @@
+#include <WiFi.h>
+#include <WebServer.h>
+
+// Ganti dengan SSID dan password WiFi kamu
+const char* ssid = "NAMA_WIFI_KAMU";
+const char* password = "PASSWORD_WIFI_KAMU";
+
+// Membuat server web di port 80
+WebServer server(80);
+
+// Pin GPIO untuk LED (bisa pakai GPIO 25 atau GPIO 2 jika pakai LED bawaan ESP32)
+const int ledPin = 25;
+
+void setup() {
+  Serial.begin(115200);
+  
+  // Setup pin LED sebagai OUTPUT
+  pinMode(ledPin, OUTPUT);
+  digitalWrite(ledPin, LOW); // LED mati di awal
+
+  // Mulai koneksi WiFi
+  WiFi.begin(ssid, password);
+  Serial.print("Menghubungkan ke WiFi");
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("\nTerhubung!");
+  Serial.print("Alamat IP: ");
+  Serial.println(WiFi.localIP());
+
+  // Halaman utama web
+  server.on("/", HTTP_GET, []() {
+    String html = "<html><body style='text-align:center; font-family:sans-serif;'>";
+    html += "<h1>Kontrol LED</h1>";
+    html += "<p>Klik tombol di bawah untuk menyalakan LED</p>";
+    html += "<a href=\"/power\"><button style='font-size:24px;padding:20px;'>Nyalakan LED</button></a>";
+    html += "</body></html>";
+    server.send(200, "text/html", html);
+  });
+
+  // Endpoint untuk menyalakan LED
+  server.on("/power", HTTP_GET, []() {
+    digitalWrite(ledPin, HIGH); // LED nyala
+    delay(1000);                // 1 detik
+    digitalWrite(ledPin, LOW);  // LED mati
+    server.send(200, "text/plain", "LED sudah dinyalakan selama 1 detik.");
+  });
+
+  // Jalankan server
+  server.begin();
+  Serial.println("Server web ESP32 siap!");
+}
+
+void loop() {
+  server.handleClient(); // Menangani request dari browser
+}

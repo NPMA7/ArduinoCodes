@@ -1,0 +1,168 @@
+#include <WiFi.h>
+#include <WebServer.h>
+
+const char* ssid = "NAMA_WIFI_KAMU";
+const char* password = "PASSWORD_WIFI_KAMU";
+
+WebServer server(80);
+const int RelayPin = 25;
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(RelayPin, OUTPUT);
+  digitalWrite(RelayPin, LOW);
+
+  WiFi.begin(ssid, password);
+  Serial.print("Menghubungkan ke WiFi");
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("\nTerhubung!");
+  Serial.println(WiFi.localIP());
+
+  server.on("/", HTTP_GET, []() {
+    String html = R"rawliteral(
+      <!DOCTYPE html>
+      <html lang="id">
+      <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Kontrol Relay ESP32</title>
+        <style>
+          body {
+            font-family: 'Segoe UI', sans-serif;
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(to right, #2193b0, #6dd5ed);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            color: #fff;
+          }
+          h1 {
+            margin-bottom: 10px;
+          }
+          p {
+            margin-top: 5px;
+            font-size: 1rem;
+          }
+          .btn {
+            padding: 15px 30px;
+            font-size: 18px;
+            margin: 10px;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: transform 0.2s, background 0.3s;
+          }
+          .trigger {
+            background: #4caf50;
+          }
+          .trigger:hover {
+            background: #45a049;
+            transform: scale(1.05);
+          }
+          .shutdown {
+            background: #f44336;
+          }
+          .shutdown:hover {
+            background: #d32f2f;
+            transform: scale(1.05);
+          }
+          .voice {
+            background: #ff9800;
+          }
+          .voice:hover {
+            background: #fb8c00;
+            transform: scale(1.05);
+          }
+          #status {
+            margin-top: 20px;
+            font-size: 18px;
+            background: rgba(255,255,255,0.2);
+            padding: 10px 20px;
+            border-radius: 8px;
+          }
+        </style>
+      </head>
+      <body>
+        <h1>Kendali Relay ESP32</h1>
+        <p>Klik tombol atau gunakan suara untuk mengontrol relay</p>
+        <button class="btn trigger" onclick="triggerRelay()">Trigger Relay</button>
+        <button class="btn shutdown" onclick="shutdown()">Matikan Paksa</button>
+        <br>
+        <button class="btn voice" onclick="mulaiVoice()">Perintah Suara</button>
+        <p id="status">Status: Menunggu perintah...</p>
+
+        <script>
+          function triggerRelay() {
+            fetch("/trigger").then(res => res.text()).then(data => {
+              document.getElementById("status").innerText = "Status: " + data;
+            });
+          }
+
+          function shutdown() {
+            fetch("/shutdown").then(res => res.text()).then(data => {
+              document.getElementById("status").innerText = "Status: " + data;
+            });
+          }
+
+          function mulaiVoice() {
+            const status = document.getElementById("status");
+            if (!('webkitSpeechRecognition' in window)) {
+              status.innerText = "Browser tidak mendukung pengenalan suara";
+              return;
+            }
+
+            let recognition = new webkitSpeechRecognition();
+            recognition.lang = "id-ID";
+            recognition.start();
+            status.innerText = "Mendengarkan perintah...";
+
+            recognition.onresult = function(event) {
+              let hasil = event.results[0][0].transcript.toLowerCase();
+              status.innerText = "Perintah diterima: " + hasil;
+
+              if (hasil.includes("shutdown") || hasil.includes("paksa") || hasil.includes("mati total")) {
+                shutdown();
+              } else if (hasil.includes("nyalakan") || hasil.includes("hidupkan") || hasil.includes("trigger")) {
+                triggerRelay();
+              }
+            }
+
+            recognition.onerror = function(event) {
+              status.innerText = "Error suara: " + event.error;
+            }
+          }
+        </script>
+      </body>
+      </html>
+    )rawliteral";
+    server.send(200, "text/html", html);
+  });
+
+  server.on("/trigger", HTTP_GET, []() {
+    digitalWrite(RelayPin, HIGH);
+    delay(1000); // aktif 1 detik
+    digitalWrite(RelayPin, LOW);
+    server.send(200, "text/plain", "Relay aktif 1 detik");
+  });
+
+  server.on("/shutdown", HTTP_GET, []() {
+    digitalWrite(RelayPin, HIGH);
+    delay(3000); // aktif 3 detik
+    digitalWrite(RelayPin, LOW);
+    server.send(200, "text/plain", "Shutdown paksa (3 detik)");
+  });
+
+  server.begin();
+  Serial.println("Web server aktif!");
+}
+
+void loop() {
+  server.handleClient();
+}
